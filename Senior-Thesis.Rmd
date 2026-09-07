@@ -1,0 +1,19 @@
+---
+title: "Senior Thesis"
+author: "Theophilus Bose"
+date: "2026-09-07"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+```
+
+```{r}
+df <- read.csv("RHFS_2024_Public_Variables.csv")
+
+# No explicit NAs
+sum(is.na(df))
+```
+
