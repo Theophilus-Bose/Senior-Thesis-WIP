@@ -8,12 +8,26 @@ output: pdf_document
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 library(tidyverse)
+library(srvyr)
 ```
 
-```{r}
+```{r Survey Data Setup}
 df <- read.csv("RHFS_2024_Public_Variables.csv")
 
+df <- df |> 
+  select(-REPWGT0) |> # REPWGT0 is equivalent to WEIGHT
+  as_survey_rep(
+    repweights = starts_with("REPWGT"), 
+    weights = WEIGHT, 
+    type = "successive-difference", 
+    combined_weights = TRUE, 
+    mse = TRUE # needs to be carefully checked
+  )
+```
+
+```{r EDA}
 # No explicit NAs
 sum(is.na(df))
 ```
+
 
