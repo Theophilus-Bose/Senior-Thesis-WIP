@@ -12,16 +12,28 @@ library(srvyr)
 ```
 
 ```{r Survey Data Setup}
-df <- read.csv("RHFS_2024_Public_Variables.csv")
+rhfs <- read.csv("RHFS_2024_Public_Variables.csv")
 
-df <- df |> 
+df <- rhfs |> 
   select(-REPWGT0) |> # REPWGT0 is equivalent to WEIGHT
   as_survey_rep(
     repweights = starts_with("REPWGT"), 
     weights = WEIGHT, 
     type = "successive-difference", 
     combined_weights = TRUE, 
-    mse = TRUE # needs to be carefully checked
+    # Decided to set to T to follow SDR as outlined by Ash (to match what was done in Census's Methodology)
+    mse = TRUE
+  )
+
+# Sanity check against Table 5 of Census's Methodology
+df |> 
+  summarize(
+    properties = survey_total(vartype = "se") # Applies weights and calculates se of properties
+  ) |> 
+  mutate( # Dividing by 1000 to match Table 5's scale
+    properties = properties / 1000, 
+    properties_se = properties_se / 1000, 
+    moe = properties_se * 1.645 # 90% margin of error
   )
 ```
 
