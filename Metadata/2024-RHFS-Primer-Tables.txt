@@ -1,0 +1,251 @@
+
+/*Units*/
+
+%macro wgtsum (var);
+
+proc sort data=iuf2024.rhfspuf2024;
+by NUMCAT_R;
+run;
+
+proc means data=iuf2024.rhfspuf2024 sum;
+by NUMCAT_R;
+var &var;
+weight weight;
+title 'weighted sums units';
+run;
+
+proc means data=iuf2024.rhfspuf2024 sum;
+by NUMCAT_R;
+var &var;
+title 'unweighted sums units';
+run;
+
+%mend;
+
+%macro wgtsum2 (var);
+
+proc sort data=iuf2024.rhfspuf2024;
+by &var;
+run;
+
+proc means data=iuf2024.rhfspuf2024 sum;
+by &var;
+var NUMUNITS_R;
+weight weight;
+title 'weighted sums units';
+run;
+
+proc means data=iuf2024.rhfspuf2024 sum;
+by &var;
+var NUMUNITS_R;
+title 'unweighted sums units';
+run;
+
+%mend;
+
+%wgtsum (NUMUNITS_R);
+%wgtsum2 (DEBT);
+%wgtsum2 (SENIOR);
+%wgtsum2 (OWNENT);
+%wgtsum2 (MORTGET);
+%wgtsum2 (DEBT1);
+%wgtsum2 (YRMORT_R);
+%wgtsum2 (PMTFREQ);
+%wgtsum2 (REGPAY);
+%wgtsum2 (RPIPRIN); 
+%wgtsum2 (RPIPRPINS);
+%wgtsum2 (RPIPMI);  
+%wgtsum2 (RPIPRPTAX); 
+%wgtsum2 (GREENMORT); 
+%wgtsum2 (MORTAMT_R); 
+%wgtsum2 (OUTBAL_R); 
+
+data debtnumtc;
+set iuf2024.rhfspuf2024;
+
+if debtnum=1 then debtnumtc=1;
+	else if debtnum>1 then debtnumtc=2;
+	else debtnumtc=debtnum;
+
+run;
+
+data pmtamttc;
+set iuf2024.rhfspuf2024;
+
+if pmtamt_r>=0 and pmtamt_r<1000 then pmtamttc=1;
+	else if pmtamt_r>=1000 and pmtamt_r<2000 then pmtamttc=2;
+	else if pmtamt_r>=2000 and pmtamt_r<3000 then pmtamttc=3;
+	else if pmtamt_r>=3000 and pmtamt_r<5000 then pmtamttc=4;
+	else if pmtamt_r>=5000 and pmtamt_r<8000 then pmtamttc=5;
+	else if pmtamt_r>=8000 and pmtamt_r<11000 then pmtamttc=6;
+	else if pmtamt_r>=11000 and pmtamt_r<15000 then pmtamttc=7;
+	else if pmtamt_r>=15000 and pmtamt_r<20000 then pmtamttc=8;
+	else if pmtamt_r >=20000 then pmtamttc=9;
+		else pmtamttc=pmtamt_r;
+
+run;
+
+data lihtcunitstc;
+set iuf2024.rhfspuf2024;
+
+if lihtcunits>=0 and lihtcunits<1 then lihtcunitstc=1;
+	else if lihtcunits>=1 and lihtcunits<2 then lihtcunitstc=2;
+	else if lihtcunits>=2 and lihtcunits<=4 then lihtcunitstc=3;
+	else if lihtcunits>4 and lihtcunits<=24 then lihtcunitstc=4;
+	else if lihtcunits>24 and lihtcunits<=49 then lihtcunitstc=5;
+	else if lihtcunits>49 and lihtcunits<=99 then lihtcunitstc=6;
+	else if lihtcunits>99 and lihtcunits<=149 then lihtcunitstc=7;
+	else if lihtcunits>149 then lihtcunitstc=8;
+	else lihtcunitstc=lihtcunits;
+run;
+
+data hudunitstc;
+set iuf2024.rhfspuf2024;
+
+if hudunits>=0 and hudunits<1 then hudunitstc=1;
+	else if hudunits>=1 and hudunits<2 then hudunitstc=2;
+	else if hudunits>=2 and hudunits<=4 then hudunitstc=3;
+	else if hudunits>4 and hudunits<=24 then hudunitstc=4;
+	else if hudunits>24 and hudunits<=49 then hudunitstc=5;
+	else if hudunits>49 and hudunits<=99 then hudunitstc=6;
+	else if hudunits>99 and hudunits<=149 then hudunitstc=7;
+	else if hudunits>149 then hudunitstc=8;
+	else hudunitstc=hudunits;
+run;
+
+
+data cpresamttc;
+set iuf2024.rhfspuf2024;
+
+if cpresamt_r>=0 and cpresamt_r<5000 then cpresamttc=1;
+	else if cpresamt_r>=5000 and cpresamt_r<=9999 then cpresamttc=2;
+	else if cpresamt_r>9999 and cpresamt_r<=19999 then cpresamttc=3;
+	else if cpresamt_r>19999 and cpresamt_r<=29999 then cpresamttc=4;
+	else if cpresamt_r>29999 and cpresamt_r<=49999 then cpresamttc=5;
+	else if cpresamt_r>49999 and cpresamt_r<=74999 then cpresamttc=6;
+	else if cpresamt_r>74999 and cpresamt_r<=99999 then cpresamttc=7;
+	else if cpresamt_r>99999 and cpresamt_r<=149999 then cpresamttc=8;
+	else if cpresamt_r>149999 and cpresamt_r<=199999 then cpresamttc=9;
+	else if cpresamt_r>199999 and cpresamt_r<=299999 then cpresamttc=10;
+	else if cpresamt_r>299999 then cpresamttc=11;
+	else cpresamttc=cpresamt_r;
+
+run;
+
+%macro wgtsum3 (var);
+
+proc sort data=&var;
+by &var;
+run;
+
+proc means data=&var sum;
+by &var;
+var NUMUNITS_R;
+weight weight;
+title 'weighted sums units';
+run;
+
+proc means data=&var sum;
+by &var;
+var NUMUNITS_R;
+title 'unweighted sums units';
+run;
+
+%mend;
+
+%wgtsum3 (DEBTNUMTC);
+%wgtsum3 (PMTAMTTC);  
+%wgtsum3 (cpresamttc);
+%wgtsum3 (lihtcunitstc);
+%wgtsum3 (hudunitstc);
+
+/*Properties*/
+
+%macro wgtsump (var);
+
+proc sort data=iuf2024.rhfspuf2024;
+by NUMCAT_R;
+run;
+
+proc means data=iuf2024.rhfspuf2024 sumwgt;
+by NUMCAT_R;
+var &var;
+weight weight;
+title 'weighted sums properties';
+run;
+
+proc freq data=iuf2024.rhfspuf2024;
+tables NUMCAT_R;
+title 'unweighted sums properties';
+run;
+
+%mend;
+
+%macro wgtsum2p (var);
+
+proc sort data=iuf2024.rhfspuf2024;
+by &var;
+run;
+
+proc means data=iuf2024.rhfspuf2024 sumwgt;
+by &var;
+var &var;
+weight weight;
+title 'weighted sums';
+run;
+
+proc freq data=iuf2024.rhfspuf2024;
+tables &var;
+title 'unweighted sums properties';
+run;
+
+%mend;
+
+%wgtsump (NUMUNITS_R);
+%wgtsum2p (DEBT);
+%wgtsum2p (SENIOR);
+%wgtsum2p (OWNENT);
+
+%wgtsum2p (MORTGET);
+%wgtsum2p (DEBT1);
+%wgtsum2p (YRMORT_R);
+%wgtsum2p (MORTAMT_R);	
+%wgtsum2p (OUTBAL_R);		
+%wgtsum2p (PMTFREQ);
+%wgtsum2p (REGPAY);
+%wgtsum2p (RPIPRIN);
+%wgtsum2p (RPIPRPINS); 
+%wgtsum2p (RPIPMI);
+%wgtsum2p (RPIPRPTAX); 
+%wgtsum2p (GREENMORT); 
+
+%macro wgtsum3p (var);
+
+proc sort data=&var;
+by &var;
+run;
+
+proc means data=&var sumwgt;
+by &var;
+var &var;
+weight weight;
+title 'weighted sums';
+run;
+
+proc freq data=&var;
+tables &var;
+title 'unweighted sums properties';
+run;
+
+%mend;
+
+%wgtsum3p (DEBTNUMTC);
+%wgtsum3p (PMTAMTTC);  
+%wgtsum3p (cpresamttc);
+%wgtsum3p (lihtcunitstc);
+%wgtsum3p (hudunitstc);
+
+
+
+
+
