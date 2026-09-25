@@ -9,11 +9,39 @@ output: pdf_document
 knitr::opts_chunk$set(echo = TRUE)
 library(tidyverse)
 library(srvyr)
+library(naniar)
 ```
 
 ```{r Survey Data Setup}
 rhfs <- read.csv("RHFS_2024_Public_Variables.csv")
 
+# Turning Categorical Variables into Factors
+rhfs <- rhfs |> 
+  mutate(
+    across(
+      c(NUMCAT_R, OUTCOME, PROPCON, PROPTOWN,
+        COMPLEX, NUMBLD_R, YRNEWBLG_R, YRPROPACQ_R, APPRWAIVER,
+        CASHDWN, HOWACQ, HOWMVAL, OFFSTPARKAHS, UNITSTAT,
+        ADAGENCY, ADAGENT, ADNEWSPAPER, ADONLINE, ADOTHONLINE,
+        ADVERTISE, ADWEBSITE, MLS, MNGMNT, NUMOTHPROP,
+        NUMOTHUNITS, OWNENT, OWNOTHPROP, COMMSPACE, CONCSS,
+        ICABLE, IELEC, IGAS, IPARKING, IPOOL,
+        ISEWER, ITRASH, IWATER, IWIFI, LEASLNG,
+        LNGTRMPRV, NORNTAPPFEE, PAYAPP, PAYCASH, PAYCHK,
+        PAYCREDIT, PAYONLINE, PAYOTH, PAYTHIRD, RCONTROLAHS,
+        RECCOMMREN, RNTAPPFEEWAIV, SECDEPAMT, SENIOR, WEEKLNG,
+        OPTAX_R, PROPANS, ACCEPT, BENEOTH, ECONDEVLP,
+        ELDERLY, GOVBELOW, GOVGRANT, HISTORIC, LOWINAREA,
+        LOWINCTEN, OTHRCV, RSUBSIDY, STLOWINC, YRMORT_R,
+        DEBT, DEBT1, GREENMORT, LOCTYP, MORTGET,
+        PMTFREQ, REGPAY, RPIPMI, RPIPRIN, RPIPRPINS,
+        RPIPRPTAX, WHYNOMRT, SAMPSTRATA, MORTAMT_R, OUTBAL_R, RNTAPPFEE_R, 
+        YRPROPREHAB_R), 
+      as.factor
+    )
+   )
+
+# Loads the data frame with srvyr
 df <- rhfs |> 
   select(-REPWGT0) |> # REPWGT0 is equivalent to WEIGHT
   as_survey_rep(
@@ -25,7 +53,8 @@ df <- rhfs |>
     mse = TRUE
   )
 
-# Sanity check against Table 5 of Census's Methodology
+# Sanity check for if the data was successfully loaded with srvyr
+# using Table 5 of Census's RHFS Methodology
 df |> 
   summarize(
     properties = survey_total(vartype = "se") # Applies weights and calculates se of properties
@@ -34,6 +63,43 @@ df |>
     properties = properties / 1000, 
     properties_se = properties_se / 1000, 
     moe = properties_se * 1.645 # 90% margin of error
+  )
+```
+
+```{r Cleaning the Dataset}
+# Makes View(rhfs) much more productive.
+rhfs <- rhfs |> 
+  select(-starts_with("REPWGT"), -WEIGHT, 
+         -SURVYR, -CONTROLPUF, # is always 2024, ID isn't useful in data analysis
+         # J flag variables mark values that were manually reviewed; note that
+         # they may become relevant if outliers are under scrutiny.
+         -starts_with("J"), 
+         # A continuous variable coded as a factor without documentation; may
+         # be useful for pure prediction
+         -PCTFEEWAIV_R
+         )
+
+# Renaming some factor levels for later convenience
+rhfs <- rhfs |> 
+  mutate(
+    NUMCAT_R = fct_recode(
+      NUMCAT_R, 
+      "1 Unit" = "0", 
+      "2-4 Units" = "1", 
+      "5-24 Units" = "2", 
+      "25-49 Units" = "3", 
+      "50+ Units" = "4"
+    ), 
+    OUTCOME = fct_recode(
+      OUTCOME, 
+      "Interview Compl; self response" = "1", 
+      "Assisted living limited interview; self response" = "3", 
+      "Conversion from partial to full interview" = "5", 
+      "Interview Compl; field interview" = "201", 
+      "Assisted living limited interview; field interview" = "203", 
+      "Sufficient partial; field interview" = "204", 
+      "Military limited field interview" = "206"
+    )
   )
 ```
 
