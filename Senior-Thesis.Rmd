@@ -9,10 +9,10 @@ output: pdf_document
 knitr::opts_chunk$set(echo = TRUE)
 library(tidyverse)
 library(srvyr)
-library(naniar)
+library(mice)
 ```
 
-```{r Survey Data Setup}
+```{r Loading the Dataset}
 rhfs <- read.csv("RHFS_2024_Public_Variables.csv")
 
 # Turning Categorical Variables into Factors
@@ -41,6 +41,31 @@ rhfs <- rhfs |>
     )
    )
 
+# Renaming some factor levels for later convenience
+rhfs <- rhfs |> 
+  mutate(
+    NUMCAT_R = fct_recode(
+      NUMCAT_R, 
+      "1 Unit" = "0", 
+      "2-4 Units" = "1", 
+      "5-24 Units" = "2", 
+      "25-49 Units" = "3", 
+      "50+ Units" = "4"
+    ), 
+    OUTCOME = fct_recode(
+      OUTCOME, 
+      "Interview Compl; self response" = "1", 
+      "Assisted living limited interview; self response" = "3", 
+      "Conversion from partial to full interview" = "5", 
+      "Interview Compl; field interview" = "201", 
+      "Assisted living limited interview; field interview" = "203", 
+      "Sufficient partial; field interview" = "204", 
+      "Military limited field interview" = "206"
+    )
+  )
+```
+
+```{r Survey Data Setup}
 # Loads the data frame with srvyr
 df <- rhfs |> 
   select(-REPWGT0) |> # REPWGT0 is equivalent to WEIGHT
@@ -49,7 +74,8 @@ df <- rhfs |>
     weights = WEIGHT, 
     type = "successive-difference", 
     combined_weights = TRUE, 
-    # Decided to set to T to follow SDR as outlined by Ash (to match what was done in Census's Methodology)
+    # Decided to set to T to follow SDR as outlined by Ash (to match what was
+    # done in Census's Methodology)
     mse = TRUE
   )
 
@@ -79,33 +105,65 @@ rhfs <- rhfs |>
          -PCTFEEWAIV_R
          )
 
-# Renaming some factor levels for later convenience
-rhfs <- rhfs |> 
+# NAs in the dataset
+missingvalues <- function(df) {
+  NAs <- sum(sapply(df, \(x) sum(x == -8))) # Not applicable
+  NRs <- sum(sapply(df, \(x) sum(x == -9))) # Not reported
+  
+  tibble(
+    NAs = NAs, # Not applicable
+    NRs = NRs, # Not reported
+    perc.missing = (NAs + NRs) / prod(dim(df)) # % of missing values in the df
+  )
+}
+missingvalues(rhfs)
+
+# Missing values by interview type
+rhfs |> 
+  summarize(
+    # pick(everything()) extracts a data frame of all non-grouping columns
+    missingvalues(pick(everything())), 
+    .by = OUTCOME
+  )
+
+# Handling known Trivially Missing values
+# Certain values in the columns below can only exist if REGPAY is 1, so -9 is 
+# wrongly assigned to them.
+trivially.missing.regpays <- rhfs |> 
+  mutate(id = row_number()) |> 
+  filter( 
+    REGPAY == -9 & 
+      # In given observation, if any of these columns contain a value other than
+      # -8 or -9 return True.
+      if_any(c(PMTAMT_R, PMTFREQ, RPIPRIN, RPIPRPINS, RPIPMI, RPIPRPTAX), \(x) !x %in% c(-8, -9))
+    ) |>
+  select(id, REGPAY, PMTAMT_R, PMTFREQ, RPIPRIN, RPIPRPINS, RPIPMI, RPIPRPTAX) |> 
+  pull(id)
+
+rhfs$REGPAY[trivially.missing.regpays] <- 1
+
+# Evidence for MAR (missing at random) in MRKTVAL_R
+df |> 
   mutate(
-    NUMCAT_R = fct_recode(
-      NUMCAT_R, 
-      "1 Unit" = "0", 
-      "2-4 Units" = "1", 
-      "5-24 Units" = "2", 
-      "25-49 Units" = "3", 
-      "50+ Units" = "4"
-    ), 
-    OUTCOME = fct_recode(
-      OUTCOME, 
-      "Interview Compl; self response" = "1", 
-      "Assisted living limited interview; self response" = "3", 
-      "Conversion from partial to full interview" = "5", 
-      "Interview Compl; field interview" = "201", 
-      "Assisted living limited interview; field interview" = "203", 
-      "Sufficient partial; field interview" = "204", 
-      "Military limited field interview" = "206"
-    )
+    mrktNA = MRKTVAL_R == -9
+  ) |> 
+  summarize(
+    survey_mean(mrktNA), 
+    .by = NUMCAT_R
+  )
+
+df |> 
+  filter(MRKTVAL_R != -9) |> 
+  summarize( 
+    mean_mrktval = survey_mean(MRKTVAL_R), 
+    median_mrktval = survey_median(MRKTVAL_R), 
+    .by = NUMCAT_R 
   )
 ```
 
+
 ```{r EDA}
-# No explicit NAs
-sum(is.na(df))
+
 ```
 
 
