@@ -63,6 +63,68 @@ rhfs <- rhfs |>
       "Military limited field interview" = "206"
     )
   )
+
+# Rearranging variables greatly improves View(rhfs)
+questionnaire_order <- c(
+  # 1c-1e and property definition
+  "PROPTOWN", "PROPCON", "COMPLEX",
+  "NUMBLD_R", "NUMUNITS_R", "NUMCAT_R", 
+
+  # 2-4e
+  "UNITSTAT", "YRNEWBLG_R", "HOWACQ", "YRPROPACQ_R", "PURPRICE_R",
+  "CASHDWN", "CASHDWNAMT", "MRKTVAL_R", "HOWMVAL", "APPRWAIVER",
+
+  # 5-6: occupancy, rents, and rent payment methods
+  "BROOMS", "TOTRENTVAC", "TRENOC_R", "TRENVA_R", "TOWNOC_R",
+  "TEMPOC_R", "TOTHVA_R", "LOWRENT", "HIRENT", "RENT",
+  "RENTNO_R", "RENTLT249_R", "RENT274_R", "RENT299_R", "RENT349_R",
+  "RENT399_R", "RENT449_R", "RENT499_R", "RENT549_R", "RENT599_R",
+  "RENT649_R", "RENT699_R", "RENT749_R", "RENT799_R", "RENT899_R",
+  "RENT999_R", "RENT1099_R", "RENT1249_R", "RENT1499_R", "RENT1999_R",
+  "RENT2499_R", "RENT2999_R", "RENT3499_R", "RENT3999_R", "RENT4499_R",
+  "RENT4999_R", "RENT5000_R", "BED0_R", "BED1_R", "BED2_R", "BED3_R",
+  "PAYONLINE", "PAYTHIRD", "PAYAPP", "PAYCREDIT", "PAYCHK", "PAYCASH", "PAYOTH",
+
+  # 6a-11c
+  "LEASLNG", "LNGTRMPRV", "WEEKLNG", "WEEKLNGNUM", "WEEKLNGPCT",
+  "RNTAPPFEE_R", "NORNTAPPFEE", "RNTAPPFEEWAIV", "PCTFEEWAIV_R", "SECDEPAMT",
+  "CONCSS", "CONCSSNUM", "SENIOR", "RCONTROL", "RCONTROLAHS",
+  "OFFSTPARK", "OFFSTPARKAHS", "IELEC", "IGAS", "IWATER", "ISEWER", "ITRASH",
+  "ICABLE", "IWIFI", "IPOOL", "IPARKING", "PROPANS",
+
+  # 12a-15e
+  "TOTCOLL", "COMMSPACE", "RECCOMMREN", "COMMRENT", "MNGMNT", "HRSMNGMNT",
+  "ADVERTISE", "ADWEBSITE", "ADONLINE", "ADOTHONLINE", "ADNEWSPAPER",
+  "ADAGENCY", "ADAGENT", "MLS",
+
+  # 16: operating expenses
+  "OPPAY", "OPTAX_R", "OPINSUR", "OPELGAS", "OPWTRSWR", "OPREP", "OPMNG",
+  "OPPROTH", "OPSECUR", "OPLAND", "OPOTHEX", "OPEX_R",
+
+  # 17-18c: capital expenses and ownership
+  "CAPEX_R", "CPHEATAMT", "CPRFAMT", "CPWINAMT", "CPDOORAMT", "CPFLRAMT",
+  "CPEXTAMT", "CPPLBAMT", "CPELEAMT", "CPKITAMT", "CPBATAMT", "CPACCAMT",
+  "CPOTHAMT", "CPRESAMT_R", "OWNENT", "OWNOTHPROP", "NUMOTHPROP", "NUMOTHUNITS",
+
+  # 19-23: subsidies, tax credits, and tax reductions
+  "HUDUNITS", "GOVBELOW", "RSUBSIDY", "ELDERLY", "GOVGRANT", "BENEOTH",
+  "LIHTCUNITS", "STLOWINC", "HISTORIC", "LOWINCTEN", "LOWINAREA", "ECONDEVLP", "OTHRCV",
+
+  # 24-37: debt/mortgage section and HUD voucher history
+  "DEBT", "WHYNOMRT", "DEBTNUM", "DEBT1", "YRMORT_R", "MORTAMT_R", "OUTBAL_R",
+  "APPVAL_R", "GREENMORT", "MORTGET", "LOCTYP", "REGPAY", "PMTAMT_R", "PMTFREQ",
+  "RPIPRIN", "RPIPRPINS", "RPIPMI", "RPIPRPTAX", "ACCEPT"
+)
+
+rhfs <- rhfs |>
+  relocate(
+    CONTROLPUF, OUTCOME, SAMPSTRATA, SURVYR,
+    all_of(questionnaire_order)
+  ) |>
+  # Keep the full-sample and replicate weights together at the far right.
+  relocate(
+    WEIGHT, starts_with("REPWGT"), .after = last_col()
+  )
 ```
 
 ```{r Survey Data Setup}
@@ -102,7 +164,9 @@ rhfs <- rhfs |>
          -starts_with("J"), 
          # A continuous variable coded as a factor without documentation; may
          # be useful for pure prediction
-         -PCTFEEWAIV_R
+         # -PCTFEEWAIV_R, 
+         # Poorly documented variable with 99.5% of its values missing
+         -WEEKLNGPCT
          )
 
 # NAs in the dataset
@@ -126,21 +190,66 @@ rhfs |>
     .by = OUTCOME
   )
 
+
+
 # Handling known Trivially Missing values
 # Certain values in the columns below can only exist if REGPAY is 1, so -9 is 
 # wrongly assigned to them.
-trivially.missing.regpays <- rhfs |> 
+trivially.missing.regpay <- rhfs |> 
   mutate(id = row_number()) |> 
   filter( 
     REGPAY == -9 & 
-      # In given observation, if any of these columns contain a value other than
+      # In a given observation, if any of these columns contain a value other than
       # -8 or -9 return True.
       if_any(c(PMTAMT_R, PMTFREQ, RPIPRIN, RPIPRPINS, RPIPMI, RPIPRPTAX), \(x) !x %in% c(-8, -9))
     ) |>
   select(id, REGPAY, PMTAMT_R, PMTFREQ, RPIPRIN, RPIPRPINS, RPIPMI, RPIPRPTAX) |> 
   pull(id)
 
-rhfs$REGPAY[trivially.missing.regpays] <- 1
+rhfs$REGPAY[trivially.missing.regpay] <- 1
+
+# Same idea as with REGPAY
+trivially.missing.ownothprop <- rhfs |> 
+  mutate(id = row_number()) |> 
+  filter( 
+    OWNOTHPROP == -9 & 
+      if_any(c(NUMOTHPROP, NUMOTHUNITS), \(x) !x %in% c(-8, -9))
+    ) |>
+  select(id, NUMOTHPROP, NUMOTHUNITS) |> 
+  pull(id)
+
+rhfs$OWNOTHPROP[trivially.missing.ownothprop] <- 1
+
+# Same idea as with REGPAY
+trivially.missing.rntappfeewaiv <- rhfs |> 
+  mutate(id = row_number()) |> 
+  filter( 
+    RNTAPPFEEWAIV == -9 & 
+      if_any(c(PCTFEEWAIV_R), \(x) !x %in% c(-8, -9))
+    ) |>
+  select(id, PCTFEEWAIV_R) |> 
+  pull(id)
+
+rhfs$OWNOTHPROP[trivially.missing.rntappfeewaiv] <- 1
+
+# Ensuring that when CASHDWN is 2, CASHDWNAMT is always -9
+rhfs |> 
+  mutate(id = row_number()) |> 
+  select(id, CASHDWN, CASHDWNAMT) |> 
+  filter(CASHDWN == 2 & CASHDWNAMT != -9)
+
+# If a CASHDWN payment wasn't made, then the CASHDWNAMT should be 0
+rhfs$CASHDWNAMT <- ifelse(rhfs$CASHDWN == 2, 0, rhfs$CASHDWNAMT)
+
+# Same idea as with CASHDWN/CASHDWNAMT
+rhfs |> 
+  mutate(id = row_number()) |> 
+  select(id, WEEKLNG, WEEKLNGNUM) |> 
+  filter(WEEKLNG == 2 & WEEKLNGNUM != -9)
+
+rhfs$WEEKLNGNUM <- ifelse(rhfs$WEEKLNG == 2, 0, rhfs$WEEKLNGNUM)
+
+
 
 # Evidence for MAR (missing at random) in MRKTVAL_R
 df |> 
