@@ -208,7 +208,7 @@ trivially.missing.regpay <- rhfs |>
 
 rhfs$REGPAY[trivially.missing.regpay] <- 1
 
-# Same idea as with REGPAY
+
 trivially.missing.ownothprop <- rhfs |> 
   mutate(id = row_number()) |> 
   filter( 
@@ -220,7 +220,7 @@ trivially.missing.ownothprop <- rhfs |>
 
 rhfs$OWNOTHPROP[trivially.missing.ownothprop] <- 1
 
-# Same idea as with REGPAY
+
 trivially.missing.rntappfeewaiv <- rhfs |> 
   mutate(id = row_number()) |> 
   filter( 
@@ -230,9 +230,26 @@ trivially.missing.rntappfeewaiv <- rhfs |>
   select(id, PCTFEEWAIV_R) |> 
   pull(id)
 
-rhfs$OWNOTHPROP[trivially.missing.rntappfeewaiv] <- 1
+rhfs$RNTAPPFEEWAIV[trivially.missing.rntappfeewaiv] <- 1
 
-# Ensuring that when CASHDWN is 2, CASHDWNAMT is always -9
+
+# Total rental receipts as a percent of property value (TRENTRCTPV_R) is
+# calculated with (TOTCOLL + COMMRENT) / MRKTVAL. If COMMSPACE = 2, then
+# COMMRENT = 0, so TRENTRCTPV_R = TOTCOLL / MRKTVAL as derived below.
+trivially.missing.trentrctpv_r <- rhfs |> 
+  mutate(id = row_number()) |> 
+  select(id, TRENTRCTPV_R, COMMSPACE, COMMRENT, RECCOMMREN, TOTCOLL, MRKTVAL_R) |> 
+  filter(TRENTRCTPV_R == -8 & COMMSPACE == 2 & 
+      if_all(c(TOTCOLL, MRKTVAL_R), \(x) !x %in% c(-8, -9))
+    ) |> 
+  pull(id)
+
+rhfs$TRENTRCTPV_R[trivially.missing.trentrctpv_r] <-
+  rhfs$TOTCOLL[trivially.missing.trentrctpv_r] /
+  rhfs$MRKTVAL_R[trivially.missing.trentrctpv_r]
+
+
+# Ensuring that when CASHDWN is 2, CASHDWNAMT is indeed always -9
 rhfs |> 
   mutate(id = row_number()) |> 
   select(id, CASHDWN, CASHDWNAMT) |> 
@@ -241,13 +258,53 @@ rhfs |>
 # If a CASHDWN payment wasn't made, then the CASHDWNAMT should be 0
 rhfs$CASHDWNAMT <- ifelse(rhfs$CASHDWN == 2, 0, rhfs$CASHDWNAMT)
 
+
 # Same idea as with CASHDWN/CASHDWNAMT
 rhfs |> 
   mutate(id = row_number()) |> 
   select(id, WEEKLNG, WEEKLNGNUM) |> 
   filter(WEEKLNG == 2 & WEEKLNGNUM != -9)
 
+# If no units are offered for daily/weekly rental, then WEEKLNGNUM (the count
+# of those that are offered) should be 0
 rhfs$WEEKLNGNUM <- ifelse(rhfs$WEEKLNG == 2, 0, rhfs$WEEKLNGNUM)
+
+
+# Viewing targets for imputation
+rhfs |> 
+  mutate(id = row_number()) |> 
+  select(COMMSPACE, COMMRENT, RECCOMMREN) |> 
+  filter(COMMSPACE == 2)
+
+# If there is no commercial space on this property, then the property did not
+# receive any rental income from a commercial use of the property.
+rhfs$RECCOMMREN <- ifelse(rhfs$COMMSPACE == 2, 2, rhfs$RECCOMMREN)
+rhfs$COMMRENT <- ifelse(rhfs$COMMSPACE == 2, 0, rhfs$COMMRENT)
+
+
+rhfs |> 
+  mutate(id = row_number()) |> 
+  select(RECCOMMREN, COMMRENT) |> 
+  filter(RECCOMMREN == 2) |> 
+  summarize(
+    n(), 
+    .by = COMMRENT
+  )
+
+# If commercial rent was not received, then commercial rent should be 0
+rhfs$COMMRENT <- ifelse(rhfs$RECCOMMREN == 2, 0, rhfs$COMMRENT)
+
+
+
+
+missing_by_var <- data.frame(
+  variable = names(rhfs),
+  percent_missing = sapply(
+    rhfs,
+    \(x) mean(x %in% c(-9))
+  )
+) |>
+  arrange(desc(percent_missing))
 
 
 
@@ -268,6 +325,9 @@ df |>
     median_mrktval = survey_median(MRKTVAL_R), 
     .by = NUMCAT_R 
   )
+
+
+write.csv(rhfs, "RHFS-2024-Cleaned.csv", row.names = FALSE)
 ```
 
 
