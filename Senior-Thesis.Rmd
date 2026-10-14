@@ -295,6 +295,15 @@ rhfs |>
 rhfs$COMMRENT <- ifelse(rhfs$RECCOMMREN == 2, 0, rhfs$COMMRENT)
 
 
+# More informative than "-8"
+rhfs <- rhfs |> 
+  mutate(
+    UNITSTAT = fct_recode(
+      UNITSTAT, 
+      "Not a single unit" = "-8"
+    )
+  )
+
 
 
 missing_by_var <- data.frame(
