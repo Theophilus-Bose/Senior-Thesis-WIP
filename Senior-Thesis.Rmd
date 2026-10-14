@@ -278,7 +278,7 @@ rhfs |>
 
 # If there is no commercial space on this property, then the property did not
 # receive any rental income from a commercial use of the property.
-rhfs$RECCOMMREN <- ifelse(rhfs$COMMSPACE == 2, 2, rhfs$RECCOMMREN)
+rhfs$RECCOMMREN[rhfs$COMMSPACE == 2] <- "2"
 rhfs$COMMRENT <- ifelse(rhfs$COMMSPACE == 2, 0, rhfs$COMMRENT)
 
 
