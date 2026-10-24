@@ -194,7 +194,7 @@ rhfs |>
 
 # Handling known Trivially Missing values
 # Certain values in the columns below can only exist if REGPAY is 1, so -9 is 
-# wrongly assigned to them.
+# wrongly assigned to the corresponding REGPAY values.
 trivially.missing.regpay <- rhfs |> 
   mutate(id = row_number()) |> 
   filter( 
@@ -249,7 +249,7 @@ rhfs$TRENTRCTPV_R[trivially.missing.trentrctpv_r] <-
   rhfs$MRKTVAL_R[trivially.missing.trentrctpv_r]
 
 
-# Ensuring that when CASHDWN is 2, CASHDWNAMT is indeed always -9
+# When CASHDWN is 2, CASHDWNAMT is indeed always -9
 rhfs |> 
   mutate(id = row_number()) |> 
   select(id, CASHDWN, CASHDWNAMT) |> 
@@ -303,6 +303,25 @@ rhfs <- rhfs |>
       "Not a single unit" = "-8"
     )
   )
+
+
+# TOTRENTVAC's (total units for rent or vacant-for rent) 377 missing values are
+# due to them being outside its universe of NUMUNITS >= 2. UNITSTAT (status of
+# single unit) indicates that all of these values are rented or vacant for rent,
+# pointing towards the idea that the 377 missing values should have a TOTRENTVAC
+# of 1.
+table(rhfs$TOTRENTVAC)
+table(rhfs$UNITSTAT)
+rhfs$TOTRENTVAC <- ifelse(rhfs$TOTRENTVAC == -9, 1, rhfs$TOTRENTVAC)
+
+
+# Reverse engineering TOTRENTVAC indicates that it is constructed by NUMUNITS - 
+# TOWNOC_R - TEMPOC_R - TOTHVA_R (accurate 99.66% of the time). To achieve this
+# accuracy, values in TOWNOC_R, TEMPOC_R, and TOTHVA_R are assigned to 0.
+rhfs$TOWNOC_R[rhfs$TOWNOC_R %in% c(-9, -8)] <- 0
+rhfs$TEMPOC_R[rhfs$TEMPOC_R %in% c(-9, -8)] <- 0
+rhfs$TOTHVA_R[rhfs$TOTHVA_R %in% c(-9, -8)] <- 0
+
 
 
 
