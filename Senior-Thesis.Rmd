@@ -10,6 +10,7 @@ knitr::opts_chunk$set(echo = TRUE)
 library(tidyverse)
 library(srvyr)
 library(mice)
+library(grateful)
 ```
 
 ```{r Loading the Dataset}
@@ -323,8 +324,67 @@ rhfs$TEMPOC_R[rhfs$TEMPOC_R %in% c(-9, -8)] <- 0
 rhfs$TOTHVA_R[rhfs$TOTHVA_R %in% c(-9, -8)] <- 0
 
 
+# When all components of OPEX_R are explicitly 0, then OPEX_R is 0. The
+# corresponding OPEXPU_R (OPEX_R / NUMUNITS_R) are therefore also 0.
+trivially.missing.opex_r <- rhfs |> 
+  mutate(id = row_number()) |> 
+  filter( 
+    OPEX_R == -9 & 
+      if_all(c(OPPAY, OPINSUR, OPELGAS, OPWTRSWR, OPREP, OPMNG, OPPROTH,
+               OPSECUR, OPLAND, OPOTHEX), \(x) x == 0)
+    ) |>
+  select(id, OPEX_R, OPEXPU_R, OPPAY, OPINSUR, OPELGAS, OPWTRSWR, OPREP, OPMNG,
+         OPPROTH, OPSECUR, OPLAND, OPOTHEX) |> 
+  pull(id)
+
+rhfs$OPEX_R[trivially.missing.opex_r] <- 0
+rhfs$OPEXPU_R[trivially.missing.opex_r] <- 0
 
 
+# When TRENOC_R is -8, then UNITSTAT is 1 (rented) or 2 (vacant, for rent).
+rhfs |> 
+  select(TRENOC_R, UNITSTAT) |> 
+  filter(TRENOC_R == -8) |> 
+  summarize(
+    n(), 
+    .by = UNITSTAT
+  )
+
+# TRENOC_R's (number of renter-occupied units) 377 -8s are due to them being
+# outside of its universe of NUMUNITS >= 2. They can be derived from UNITSTAT.
+rhfs$TRENOC_R <- ifelse(
+  # If UNITSTAT is 1, then TRENOC_R is now 1.
+  rhfs$UNITSTAT == "1", 1,
+  # If UNITSTAT is 2, then TRENOC_R is now 0.
+  ifelse(rhfs$UNITSTAT == "2", 0,
+         # Otherwise, leave unchanged.
+         rhfs$TRENOC_R))
+
+
+# When TRENVA_R is -8, then UNITSTAT is 1 (rented) or 2 (vacant, for rent).
+rhfs |> 
+  select(TRENVA_R, UNITSTAT) |> 
+  filter(TRENVA_R == -8) |> 
+  summarize(
+    n(), 
+    .by = UNITSTAT
+  )
+
+# TRENVA_R's (number of vacant for rent units) 377 -8s are due to them being
+# outside of its universe of NUMUNITS >= 2. They can be derived from UNITSTAT.
+rhfs$TRENVA_R <- ifelse(
+  # If UNITSTAT is 1, then TRENVA_R is now 0.
+  rhfs$UNITSTAT == "1", 0,
+  # If UNITSTAT is 2, then TRENVA_R is now 1.
+  ifelse(rhfs$UNITSTAT == "2", 1,
+         # Otherwise, leave unchanged.
+         rhfs$TRENVA_R))
+
+
+write.csv(rhfs, "RHFS-2024-Cleaned.csv", row.names = FALSE)
+```
+
+```{r temp}
 missing_by_var <- data.frame(
   variable = names(rhfs),
   percent_missing = sapply(
@@ -333,7 +393,6 @@ missing_by_var <- data.frame(
   )
 ) |>
   arrange(desc(percent_missing))
-
 
 
 # Evidence for MAR (missing at random) in MRKTVAL_R
@@ -353,14 +412,22 @@ df |>
     median_mrktval = survey_median(MRKTVAL_R), 
     .by = NUMCAT_R 
   )
-
-
-write.csv(rhfs, "RHFS-2024-Cleaned.csv", row.names = FALSE)
 ```
-
 
 ```{r EDA}
 
 ```
 
+```{r Citations}
+# For citing R, RStudio, and the packages that were used in this analysis
+cite_packages(
+  pkgs = "All",
+  omit = NULL,
+  citation.style = "apa",
+  include.RStudio = TRUE,
+  cite.tidyverse = FALSE,
+  out.format = "docx",
+  out.dir = getwd()
+)
+```
 
