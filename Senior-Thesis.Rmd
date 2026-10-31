@@ -381,6 +381,23 @@ rhfs$TRENVA_R <- ifelse(
          rhfs$TRENVA_R))
 
 
+# BROOMS is observed for all but one single-unit property
+rhfs |> 
+  select(BROOMS, BED0_R, BED1_R, BED2_R, BED3_R) |> 
+    filter(BED0_R == -8)
+
+# BED0_R, BED1_R, BED2_R, and BED3_R's 377 -8s are due to them being
+# outside of their universe of NUMUNITS >= 2. They can be derived from BROOMS.
+rhfs <- rhfs |>
+  mutate(
+    single = NUMUNITS_R == 1 & BROOMS >= 0,
+    BED0_R = if_else(single, as.integer(BROOMS == 0), BED0_R),
+    BED1_R = if_else(single, as.integer(BROOMS == 1), BED1_R),
+    BED2_R = if_else(single, as.integer(BROOMS == 2), BED2_R),
+    BED3_R = if_else(single, as.integer(BROOMS >= 3), BED3_R)
+  ) |>
+  select(-single)
+
 write.csv(rhfs, "RHFS-2024-Cleaned.csv", row.names = FALSE)
 ```
 
