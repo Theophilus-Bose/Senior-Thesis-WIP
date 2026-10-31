@@ -489,6 +489,18 @@ rhfs <- rhfs |>
 rhfs$DEBTNUM <- ifelse(rhfs$DEBT == 2, 0, rhfs$DEBTNUM)
 
 
+# RCONTROL's 377 -8s are due to these values being outside of its universe of
+# NUMUNITS >= 2. 311 of them can be derived from RCONTROLAHS.
+rhfs <- rhfs |>
+  mutate(
+    RCONTROL = case_when(
+      NUMUNITS_R == 1 & RCONTROL == -8 & RCONTROLAHS == "1" ~ 1,
+      NUMUNITS_R == 1 & RCONTROL == -8 & RCONTROLAHS == "2" ~ 0,
+      TRUE ~ RCONTROL
+    )
+  )
+
+
 write.csv(rhfs, "RHFS-2024-Cleaned.csv", row.names = FALSE)
 ```
 
