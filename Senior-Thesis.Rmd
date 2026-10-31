@@ -398,6 +398,92 @@ rhfs <- rhfs |>
   ) |>
   select(-single)
 
+rhfs |> 
+  select(starts_with("RENT")) |> 
+  filter(RENT5000_R > 0)
+
+
+# RENT's 27 rent-band variables are only applicable to properties with
+# NUMUNITS >= 2. For single-unit properties, RENT provides the monthly rent,
+# which can be used to determine the corresponding rent bands. Because RENT is
+# rounded, some observations' possible original rents span multiple rent bands,
+# preventing a unique assignment. Cells that must be 0 or 1 are imputed;
+# ambiguous cells and properties with unreported RENT remain unchanged. RENT
+# values topcoded as 5644 are assigned to RENT5000_R.
+
+# Lower endpoints of the 27 rent bands, in ascending order.
+rent_starts <- c(
+  RENTNO_R = 0,
+  RENTLT249_R = 1,
+  RENT274_R = 250,
+  RENT299_R = 275,
+  RENT349_R = 300,
+  RENT399_R = 350,
+  RENT449_R = 400,
+  RENT499_R = 450,
+  RENT549_R = 500,
+  RENT599_R = 550,
+  RENT649_R = 600,
+  RENT699_R = 650,
+  RENT749_R = 700,
+  RENT799_R = 750,
+  RENT899_R = 800,
+  RENT999_R = 900,
+  RENT1099_R = 1000,
+  RENT1249_R = 1100,
+  RENT1499_R = 1250,
+  RENT1999_R = 1500,
+  RENT2499_R = 2000,
+  RENT2999_R = 2500,
+  RENT3499_R = 3000,
+  RENT3999_R = 3500,
+  RENT4499_R = 4000,
+  RENT4999_R = 4500,
+  RENT5000_R = 5000
+)
+
+# The corresponding upper endpoints.
+rent_ends <- set_names(
+  c(unname(rent_starts[-1]) - 1, Inf),
+  names(rent_starts)
+)
+
+rent_cols <- names(rent_starts)
+
+# Snapshot for comparison after the imputations.
+# Useful for checks that are not explicitly included in this .Rmd.
+rent_before <- rhfs |>
+  select(NUMUNITS_R, RENT, all_of(rent_cols))
+
+rhfs <- rhfs |>
+  mutate(
+    .rent_low = case_when(
+      NUMUNITS_R != 1 | RENT < 0 ~ NA_real_,
+      RENT == 5644 ~ 5000,
+      RENT == 1000 ~ 975,
+      RENT < 1000 ~ pmax(RENT - 25, 0),
+      TRUE ~ RENT - 50
+    ),
+    .rent_high = case_when(
+      is.na(.rent_low) ~ NA_real_,
+      RENT == 5644 ~ Inf,
+      RENT < 1000 ~ RENT + 24,
+      TRUE ~ RENT + 49
+    ),
+    across(
+      all_of(rent_cols),
+      \(x) case_when(
+        .rent_low >= rent_starts[[cur_column()]] &
+          .rent_high <= rent_ends[[cur_column()]] ~ 1L,
+        .rent_high < rent_starts[[cur_column()]] |
+          .rent_low > rent_ends[[cur_column()]] ~ 0L,
+        TRUE ~ x
+      )
+    )
+  ) |>
+  select(-.rent_low, -.rent_high)
+
+
 write.csv(rhfs, "RHFS-2024-Cleaned.csv", row.names = FALSE)
 ```
 
