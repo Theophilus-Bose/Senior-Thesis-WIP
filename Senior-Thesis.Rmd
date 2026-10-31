@@ -484,6 +484,11 @@ rhfs <- rhfs |>
   select(-.rent_low, -.rent_high)
 
 
+# If DEBT is 2 (no mortgage or similar debt), then DEBTNUM (number of mortgages
+# or similar debts) is 0. This expands DEBTNUM's universe.
+rhfs$DEBTNUM <- ifelse(rhfs$DEBT == 2, 0, rhfs$DEBTNUM)
+
+
 write.csv(rhfs, "RHFS-2024-Cleaned.csv", row.names = FALSE)
 ```
 
