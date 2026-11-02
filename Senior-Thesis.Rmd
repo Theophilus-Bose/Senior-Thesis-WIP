@@ -501,6 +501,26 @@ rhfs <- rhfs |>
   )
 
 
+# LOWRENT and HIRENT are -8 for NUMUNITS >= 2. For 14 vacant-for-rent properties
+# with reported, non-topcoded RENT (the topcoded value is RENT = 5644), both
+# LOWRENT and HIRENT equal RENT.
+rhfs |> 
+  select(UNITSTAT, LOWRENT, HIRENT, RENT) |> 
+  filter(UNITSTAT == 2)
+
+rhfs <- rhfs |>
+  mutate(
+    across(
+      c(LOWRENT, HIRENT),
+      \(x) if_else(
+        NUMUNITS_R == 1 & UNITSTAT == "2" &
+          RENT >= 0 & RENT != 5644 & x == -8,
+        RENT, x
+      )
+    )
+  )
+
+
 write.csv(rhfs, "RHFS-2024-Cleaned.csv", row.names = FALSE)
 ```
 
