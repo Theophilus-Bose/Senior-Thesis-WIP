@@ -536,6 +536,23 @@ rhfs <- rhfs |>
   )
 
 
+# Viewing the targets for imputation
+rhfs |> 
+  select(OPEX_R, OPPAY, OPINSUR, OPELGAS, OPWTRSWR, OPREP, OPMNG,
+         OPPROTH, OPSECUR, OPLAND, OPOTHEX)
+
+# A component of OPEX_R coded -8 contributes zero when OPEX_R is observed.
+rhfs <- rhfs |>
+  mutate(
+    across(
+      all_of(c("OPPAY", "OPINSUR", "OPELGAS", "OPWTRSWR", "OPREP", "OPMNG",
+               "OPPROTH", "OPSECUR", "OPLAND", "OPOTHEX")),
+      \(x) if_else(OPEX_R >= 0 & x == -8, 0L, x)
+    )
+  )
+
+
+
 write.csv(rhfs, "RHFS-2024-Cleaned.csv", row.names = FALSE)
 ```
 
