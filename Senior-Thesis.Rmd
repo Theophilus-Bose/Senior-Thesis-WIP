@@ -14,10 +14,10 @@ library(grateful)
 ```
 
 ```{r Loading the Dataset}
-rhfs <- read.csv("RHFS_2024_Public_Variables.csv")
+rhfs.original <- read.csv("RHFS_2024_Public_Variables.csv")
 
 # Turning Categorical Variables into Factors
-rhfs <- rhfs |> 
+rhfs.original <- rhfs.original |> 
   mutate(
     across(
       c(NUMCAT_R, OUTCOME, PROPCON, PROPTOWN,
@@ -43,7 +43,7 @@ rhfs <- rhfs |>
    )
 
 # Renaming some factor levels for later convenience
-rhfs <- rhfs |> 
+rhfs.original <- rhfs.original |> 
   mutate(
     NUMCAT_R = fct_recode(
       NUMCAT_R, 
@@ -117,7 +117,7 @@ questionnaire_order <- c(
   "RPIPRIN", "RPIPRPINS", "RPIPMI", "RPIPRPTAX", "ACCEPT"
 )
 
-rhfs <- rhfs |>
+rhfs.original <- rhfs.original |>
   relocate(
     CONTROLPUF, OUTCOME, SAMPSTRATA, SURVYR,
     all_of(questionnaire_order)
@@ -128,38 +128,11 @@ rhfs <- rhfs |>
   )
 ```
 
-```{r Survey Data Setup}
-# Loads the data frame with srvyr
-df <- rhfs |> 
-  select(-REPWGT0) |> # REPWGT0 is equivalent to WEIGHT
-  as_survey_rep(
-    repweights = starts_with("REPWGT"), 
-    weights = WEIGHT, 
-    type = "successive-difference", 
-    combined_weights = TRUE, 
-    # Decided to set to T to follow SDR as outlined by Ash (to match what was
-    # done in Census's Methodology)
-    mse = TRUE
-  )
-
-# Sanity check for if the data was successfully loaded with srvyr
-# using Table 5 of Census's RHFS Methodology
-df |> 
-  summarize(
-    properties = survey_total(vartype = "se") # Applies weights and calculates se of properties
-  ) |> 
-  mutate( # Dividing by 1000 to match Table 5's scale
-    properties = properties / 1000, 
-    properties_se = properties_se / 1000, 
-    moe = properties_se * 1.645 # 90% margin of error
-  )
-```
-
 ```{r Cleaning the Dataset}
 # Makes View(rhfs) much more productive.
-rhfs <- rhfs |> 
+rhfs <- rhfs.original |> 
   select(-starts_with("REPWGT"), -WEIGHT, 
-         -SURVYR, -CONTROLPUF, # is always 2024, ID isn't useful in data analysis
+         -SURVYR, # is always 2024
          # J flag variables mark values that were manually reviewed; note that
          # they may become relevant if outliers are under scrutiny.
          -starts_with("J"), 
@@ -554,6 +527,41 @@ rhfs <- rhfs |>
 
 
 write.csv(rhfs, "RHFS-2024-Cleaned.csv", row.names = FALSE)
+```
+
+```{r Survey Data Setup}
+# Brings back all of the columns that were dropped for convenience at the
+# beginning of Cleaning the Dataset
+rhfs <- rhfs |>
+  left_join(
+    rhfs.original |> select(-any_of(names(rhfs)), CONTROLPUF),
+    join_by(CONTROLPUF)
+  )
+
+# Loads the data frame with srvyr
+df <- rhfs |> 
+  select(-REPWGT0) |> # REPWGT0 is equivalent to WEIGHT
+  as_survey_rep(
+    repweights = starts_with("REPWGT"), 
+    weights = WEIGHT, 
+    type = "successive-difference", 
+    combined_weights = TRUE, 
+    # Decided to set to T to follow SDR as outlined by Ash (to match what was
+    # done in Census's Methodology)
+    mse = TRUE
+  )
+
+# Sanity check for if the data was successfully loaded with srvyr
+# using Table 5 of Census's RHFS Methodology
+df |> 
+  summarize(
+    properties = survey_total(vartype = "se") # Applies weights and calculates se of properties
+  ) |> 
+  mutate( # Dividing by 1000 to match Table 5's scale
+    properties = properties / 1000, 
+    properties_se = properties_se / 1000, 
+    moe = properties_se * 1.645 # 90% margin of error
+  )
 ```
 
 ```{r temp}
