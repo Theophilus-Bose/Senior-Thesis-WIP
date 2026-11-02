@@ -271,6 +271,21 @@ rhfs |>
 rhfs$WEEKLNGNUM <- ifelse(rhfs$WEEKLNG == 2, 0, rhfs$WEEKLNGNUM)
 
 
+# WEEKLNG and WEEKLNGNUM (daily/weekly rental availability variables) are -8
+# when NUMUNITS != 1. For 7 of these properties, LEASLNG = 3 (lease length for
+# single-units is weekly) implies that WEEKLNG and WEEKLNGNUM are 1.
+weekly_targets <- rhfs |>
+  mutate(row = row_number()) |>
+  filter(NUMUNITS_R == 1, LEASLNG == "3") |>
+  select(row, LEASLNG, WEEKLNG, WEEKLNGNUM)
+
+rhfs <- rhfs |>
+  mutate(
+    WEEKLNG = replace(WEEKLNG, weekly_targets$row, "1"),
+    WEEKLNGNUM = replace(WEEKLNGNUM, weekly_targets$row, 1)
+  )
+
+
 # Viewing targets for imputation
 rhfs |> 
   mutate(id = row_number()) |> 
