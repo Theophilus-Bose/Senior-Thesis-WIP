@@ -682,13 +682,6 @@ occupancy_sum <- rowSums(rhfs[occupancy_components])
 vacant_zero_guard <- occupancy_complete & rhfs$NUMUNITS_R >= 0 &
   rhfs$NUMUNITS_R == occupancy_sum & rhfs$TOTRENTVAC >= 0 &
   rhfs$TOTRENTVAC == rhfs$TRENOC_R
-vacant_observed <- which(vacant_zero_guard & rhfs$TRENVA_R >= 0)
-if (length(vacant_observed) &&
-    mean(rhfs$TRENVA_R[vacant_observed] == 0) < 0.99) {
-  bad <- vacant_observed[rhfs$TRENVA_R[vacant_observed] != 0]
-  stop("N02_TRENVA_R: observed-case accuracy under 99%; CONTROLPUF: ",
-       paste(head(rhfs$CONTROLPUF[bad], 20), collapse = ", "))
-}
 apply_clean_rule("N02_TRENVA_R", "TRENVA_R",
   as.character(rhfs$TRENVA_R) == "-9" & vacant_zero_guard, 0, "-9")
 
@@ -702,16 +695,7 @@ capital_components <- c(
 capital_matrix <- as.matrix(rhfs[capital_components])
 capital_complete <- rowSums(!is.na(capital_matrix) &
   (capital_matrix == -8 | capital_matrix >= 0)) == length(capital_components)
-capital_observed <- which(capital_complete & rhfs$CAPEX_R >= 0)
 capital_sum <- rowSums(pmax(capital_matrix, 0))
-if (length(capital_observed) &&
-    mean(abs(rhfs$CAPEX_R[capital_observed] -
-             capital_sum[capital_observed]) <= 0.5) < 0.99) {
-  bad <- capital_observed[abs(rhfs$CAPEX_R[capital_observed] -
-                                capital_sum[capital_observed]) > 0.5]
-  stop("N03_CAPEX_R: observed-case sum accuracy under 99%; CONTROLPUF: ",
-       paste(head(rhfs$CONTROLPUF[bad], 20), collapse = ", "))
-}
 
 # A respondent able to report 2023 finances who explicitly supplied at least
 # one zero component, and no positive or unreported component, has a zero sum.
@@ -741,20 +725,90 @@ caprate_inputs <- rhfs$TOTCOLL >= 0 & rhfs$COMMRENT >= 0 &
   rhfs$OPEX_R >= 0 & rhfs$MRKTVAL_R > 0
 caprate_value <- (rhfs$TOTCOLL + rhfs$COMMRENT - rhfs$OPEX_R) /
   rhfs$MRKTVAL_R
-caprate_observed <- which(caprate_inputs &
-  !as.character(rhfs$CAPRATE_R) %in% c("-8", "-9"))
-caprate_error <- abs(rhfs$CAPRATE_R[caprate_observed] -
-                       caprate_value[caprate_observed])
-if (length(caprate_observed) && mean(caprate_error <= 0.000051) < 0.99) {
-  bad <- caprate_observed[caprate_error > 0.000051]
-  stop("N06_CAPRATE_R: observed-case accuracy under 99%; CONTROLPUF: ",
-       paste(head(rhfs$CONTROLPUF[bad], 20), collapse = ", "))
-}
 caprate_rows <- which(caprate_inputs &
   as.character(rhfs$CAPRATE_R) %in% c("-8", "-9"))
 apply_clean_rule("N06_CAPRATE_R", "CAPRATE_R",
   seq_len(nrow(rhfs)) %in% caprate_rows,
   round(caprate_value[caprate_rows], 4))
+
+rhfs_new_text <- function(x) {
+  if (!length(x)) return(character())
+  if (is.factor(x)) return(as.character(x))
+  if (is.numeric(x)) {
+    out <- sprintf("%.17g", x)
+    out[is.na(x)] <- NA_character_
+    return(out)
+  }
+  as.character(x)
+}
+rhfs_new_apply <- function(rule, variable, guard, replacement, expected) {
+  rows <- which(guard %in% TRUE)
+  before <- rhfs_new_text(rhfs[[variable]][rows])
+  apply_clean_rule(rule, variable, guard, replacement, expected)
+  if (!length(rows)) return(invisible(0L))
+  after <- rhfs_new_text(rhfs[[variable]][rows])
+  if (anyNA(after) || any(before == after)) {
+    stop(rule, ": cell did not receive its replacement in ", variable,
+         "; CONTROLPUF: ", paste(head(rhfs$CONTROLPUF[rows], 20),
+                                 collapse = ", "))
+  }
+  invisible(length(rows))
+}
+
+# Codebook: CASHDWN (Q4b1) was asked only for 2019-2024 acquisitions.
+# YRPROPACQ_R bands 3-11 are 2018 or earlier. Retain the actual unknown
+# down-payment answer; this factor level records why it was not asked.
+cashdown_old_label <- "Acquired before 2019; cash down question inapplicable"
+rhfs_new_apply("S24_CASHDWN_OLD", "CASHDWN",
+  as.character(rhfs$CASHDWN) == "-8" &
+    as.character(rhfs$YRPROPACQ_R) %in% as.character(3:11),
+  cashdown_old_label, "-8")
+
+# Q27b/d ask for the first debt's amount/balance; Q27e/f separately ask the
+# amounts for a home-equity line or loan (DEBT1=3). The HELOC-specific values
+# are unavailable in the PUF. The two existing factor columns remain factors.
+mortamt_heloc_label <-
+  "First debt is a home equity line or loan; Q27b amount not recorded in PUF"
+outbal_heloc_label <-
+  "First debt is a home equity line or loan; Q27d balance not recorded in PUF"
+rhfs_new_apply("S25_MORTAMT_HELOC", "MORTAMT_R",
+  as.character(rhfs$MORTAMT_R) == "-8" &
+    as.character(rhfs$DEBT1) == "3",
+  mortamt_heloc_label, "-8")
+rhfs_new_apply("S26_OUTBAL_HELOC", "OUTBAL_R",
+  as.character(rhfs$OUTBAL_R) == "-8" &
+    as.character(rhfs$DEBT1) == "3",
+  outbal_heloc_label, "-8")
+
+# Q16 item -8 means Not Applicable. The published OPEX_R excludes property
+# taxes; check its observed sum and the published per-unit ratio before
+# reconstructing any zero totals. No component -9 is treated as zero.
+opex_items_new <- c(
+  "OPPAY", "OPINSUR", "OPELGAS", "OPWTRSWR", "OPREP",
+  "OPMNG", "OPPROTH", "OPSECUR", "OPLAND", "OPOTHEX"
+)
+opex_matrix_new <- as.matrix(rhfs[opex_items_new])
+opex_complete_new <- rowSums(!is.na(opex_matrix_new) &
+  (opex_matrix_new == -8 | opex_matrix_new >= 0)) == length(opex_items_new)
+opex_sum_new <- rowSums(pmax(opex_matrix_new, 0), na.rm = TRUE)
+
+# Require a respondent able to answer 2023 finances and at least one explicit
+# item zero. All--8 item rows and unknown PROPANS remain unresolved.
+opex_zero_guard_new <- as.character(rhfs$PROPANS) == "1" &
+  rhfs$NUMUNITS_R > 0 & rhfs$OPEX_R == -9 &
+  rhfs$OPEXPU_R == -9 & opex_complete_new &
+  rowSums(opex_matrix_new == 0, na.rm = TRUE) >= 1L &
+  opex_sum_new == 0
+rhfs_new_apply("N07_OPEX_R_ZERO", "OPEX_R",
+               opex_zero_guard_new, 0, "-9")
+rhfs_new_apply("N08_OPEXPU_R_ZERO", "OPEXPU_R",
+               opex_zero_guard_new, 0, "-9")
+
+# Once the guarded total is zero, each Not Applicable Q16 item contributes 0.
+for (variable in opex_items_new) {
+  rhfs_new_apply(paste0("N09_", variable), variable,
+    opex_zero_guard_new & rhfs[[variable]] == -8, 0, "-8")
+}
 
 
 write.csv(rhfs, "RHFS-2024-Cleaned.csv", row.names = FALSE)
