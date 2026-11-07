@@ -386,10 +386,6 @@ rhfs <- rhfs |>
   ) |>
   select(-single)
 
-rhfs |> 
-  select(starts_with("RENT")) |> 
-  filter(RENT5000_R > 0)
-
 
 # RENT's 27 rent-band variables are only applicable to properties with
 # NUMUNITS >= 2. For single-unit properties, RENT provides the monthly rent,
@@ -523,6 +519,242 @@ rhfs <- rhfs |>
       \(x) if_else(OPEX_R >= 0 & x == -8, 0L, x)
     )
   )
+
+
+rhfs_before <- rhfs
+
+# Apply only to explicit sentinel cells. This also preserves unclassified -8/-9
+# levels in factors when only SOME rows have a known skip reason.
+apply_clean_rule <- function(rule, variable, guard, replacement,
+                             expected = c("-8", "-9")) {
+  if (!variable %in% names(rhfs)) stop(rule, ": missing column ", variable)
+  if (length(guard) != nrow(rhfs)) stop(rule, ": invalid guard length")
+  rows <- which(guard %in% TRUE)
+  if (!length(rows)) return(invisible(0L))
+  old_column <- rhfs[[variable]]
+  old <- as.character(old_column[rows])
+  if (anyNA(old) || any(!old %in% expected)) {
+    bad <- rows[is.na(old) | !old %in% expected]
+    stop(rule, ": non-target cell(s) in ", variable, "; CONTROLPUF: ",
+         paste(head(rhfs$CONTROLPUF[bad], 20), collapse = ", "))
+  }
+  if (length(replacement) == 1L) replacement <- rep(replacement, length(rows))
+  if (length(replacement) != length(rows) || anyNA(replacement) ||
+      any(as.character(replacement) %in% c("-8", "-9"))) {
+    stop(rule, ": invalid replacement for ", variable)
+  }
+  new_column <- old_column
+  if (is.factor(new_column)) {
+    new_column <- forcats::fct_expand(new_column, unique(as.character(replacement)))
+    new_column[rows] <- as.character(replacement)
+  } else {
+    if (!is.numeric(new_column) || !is.numeric(replacement)) {
+      stop(rule, ": replacement must preserve the numeric type of ", variable)
+    }
+    new_column[rows] <- replacement
+  }
+  if (!identical(as.character(new_column[rows]), as.character(replacement))) {
+    stop(rule, ": assignment failed for ", variable)
+  }
+  rhfs[[variable]] <<- new_column
+  invisible(length(rows))
+}
+
+# Structural labels describe the skip, NOT a presumed 'No' or a zero response.
+# The factor types and their existing response levels are left intact.
+apply_clean_rule("S01_PROPCON", "PROPCON",
+  as.character(rhfs$PROPCON) == "-8" & as.character(rhfs$PROPTOWN) == "1",
+  "Townhome or row house; condominium item skipped", "-8")
+apply_clean_rule("S02_COMPLEX", "COMPLEX",
+  as.character(rhfs$COMPLEX) == "-8" & as.character(rhfs$PROPCON) == "1",
+  "Condominium; complex item skipped", "-8")
+apply_clean_rule("S03_YRNEWBLG_R", "YRNEWBLG_R",
+  as.character(rhfs$YRNEWBLG_R) == "-8" & as.character(rhfs$NUMBLD_R) == "1",
+  "Only one residential building", "-8")
+apply_clean_rule("S04_LEASLNG", "LEASLNG",
+  as.character(rhfs$LEASLNG) == "-8" & rhfs$NUMUNITS_R > 1,
+  "Multi-unit property; single-unit lease item skipped", "-8")
+apply_clean_rule("S05_LNGTRMPRV_MULTI", "LNGTRMPRV",
+  as.character(rhfs$LNGTRMPRV) == "-8" & rhfs$NUMUNITS_R > 1,
+  "Multi-unit property; prior lease item skipped", "-8")
+apply_clean_rule("S06_LNGTRMPRV_LONG", "LNGTRMPRV",
+  as.character(rhfs$LNGTRMPRV) == "-8" & rhfs$NUMUNITS_R == 1 &
+    as.character(rhfs$LEASLNG) == "1",
+  "Long-term lease; prior long-term item skipped", "-8")
+apply_clean_rule("S07_WEEKLNG", "WEEKLNG",
+  as.character(rhfs$WEEKLNG) == "-8" & rhfs$NUMUNITS_R == 1,
+  "Single-unit route; weekly availability item skipped", "-8")
+apply_clean_rule("S08_RNTAPPFEEWAIV", "RNTAPPFEEWAIV",
+  as.character(rhfs$RNTAPPFEEWAIV) == "-8" &
+    as.character(rhfs$NORNTAPPFEE) == "1" &
+    as.character(rhfs$RNTAPPFEE_R) == "1",
+  "No application fee to waive", "-8")
+apply_clean_rule("S09_NORNTAPPFEE", "NORNTAPPFEE",
+  as.character(rhfs$NORNTAPPFEE) == "-9" &
+    as.character(rhfs$RNTAPPFEE_R) %in% as.character(2:6),
+  "Application fee amount reported", "-9")
+apply_clean_rule("S10_YRPROPREHAB_DEV", "YRPROPREHAB_R",
+  as.character(rhfs$YRPROPREHAB_R) == "-8" & as.character(rhfs$HOWACQ) == "1",
+  "Developed new residential buildings", "-8")
+apply_clean_rule("S11_YRPROPREHAB_BUY", "YRPROPREHAB_R",
+  as.character(rhfs$YRPROPREHAB_R) == "-8" & as.character(rhfs$HOWACQ) == "3",
+  "Purchased without substantial rehabilitation", "-8")
+
+# Q9 and Q10 use a count for multi-unit properties and a yes/no answer for
+# single-unit properties. The handful of multi-unit yes/no answers already
+# present in the PUF are preserved; no yes/no value is invented for a skip.
+apply_clean_rule("S12_RCONTROLAHS", "RCONTROLAHS",
+  as.character(rhfs$RCONTROLAHS) == "-9" & rhfs$NUMUNITS_R > 1,
+  "Multi-unit route; rent-control yes/no not recorded", "-9")
+apply_clean_rule("S13_OFFSTPARKAHS", "OFFSTPARKAHS",
+  as.character(rhfs$OFFSTPARKAHS) == "-8" & rhfs$NUMUNITS_R > 1,
+  "Multi-unit route; parking yes/no not recorded", "-8")
+
+# The program-benefit questions were omitted on the single-unit survey route.
+# These labels do not assert that the property had no program benefits.
+for (variable in c("GOVBELOW", "RSUBSIDY", "ELDERLY", "GOVGRANT",
+                   "BENEOTH", "STLOWINC")) {
+  apply_clean_rule(paste0("S14_", variable), variable,
+    as.character(rhfs[[variable]]) == "-8" & rhfs$NUMUNITS_R == 1,
+    "Single-unit property; program item skipped", "-8")
+}
+
+# A recorded debt makes the 'why no mortgage' question inapplicable.
+apply_clean_rule("S15_WHYNOMRT", "WHYNOMRT",
+  as.character(rhfs$WHYNOMRT) == "-8" & as.character(rhfs$DEBT) == "1",
+  "Mortgage or similar debt present", "-8")
+
+# For no-debt properties, first-debt questions have no defined answer. These
+# factor labels keep the difference between 'no debt' and unreported DEBT.
+no_debt_factors <- c(
+  "DEBT1", "YRMORT_R", "MORTAMT_R", "OUTBAL_R", "GREENMORT",
+  "MORTGET", "LOCTYP", "REGPAY", "PMTFREQ", "RPIPRIN",
+  "RPIPRPINS", "RPIPMI", "RPIPRPTAX"
+)
+for (variable in no_debt_factors) {
+  apply_clean_rule(paste0("S16_", variable), variable,
+    as.character(rhfs[[variable]]) == "-8" & as.character(rhfs$DEBT) == "2",
+    "No mortgage or similar debt", "-8")
+}
+apply_clean_rule("S17_LOCTYP", "LOCTYP",
+  as.character(rhfs$LOCTYP) == "-8" &
+    as.character(rhfs$DEBT1) %in% c("1", "2", "4"),
+  "First debt not a home equity line or loan", "-8")
+for (variable in c("PMTFREQ", "RPIPRIN", "RPIPRPINS", "RPIPMI", "RPIPRPTAX")) {
+  apply_clean_rule(paste0("S18_", variable), variable,
+    as.character(rhfs[[variable]]) == "-8" & as.character(rhfs$REGPAY) == "2",
+    "No regularly required payment", "-8")
+}
+
+# A website question routes to properties with at least ten units. The other
+# advertising methods route past a respondent who said no advertising.
+apply_clean_rule("S19_ADWEBSITE_SMALL", "ADWEBSITE",
+  as.character(rhfs$ADWEBSITE) == "-8" & rhfs$NUMUNITS_R < 10,
+  "Fewer than ten units; website item skipped", "-8")
+apply_clean_rule("S20_ADWEBSITE_NOAD", "ADWEBSITE",
+  as.character(rhfs$ADWEBSITE) == "-8" & rhfs$NUMUNITS_R >= 10 &
+    as.character(rhfs$ADVERTISE) == "2",
+  "Did not advertise; website item skipped", "-8")
+for (variable in c("ADONLINE", "ADOTHONLINE", "ADNEWSPAPER",
+                   "ADAGENCY", "ADAGENT")) {
+  apply_clean_rule(paste0("S21_", variable), variable,
+    as.character(rhfs[[variable]]) == "-8" & as.character(rhfs$ADVERTISE) == "2",
+    "Did not advertise; method item skipped", "-8")
+}
+apply_clean_rule("S22_MLS_NOAD", "MLS",
+  as.character(rhfs$MLS) == "-8" & as.character(rhfs$ADVERTISE) == "2",
+  "Did not advertise; MLS item skipped", "-8")
+apply_clean_rule("S23_MLS_NOAGENT", "MLS",
+  as.character(rhfs$MLS) == "-8" & as.character(rhfs$ADAGENT) == "2",
+  "No real estate agent used", "-8")
+
+# The parking yes/no question was answered 'No' for these single-unit homes.
+apply_clean_rule("N01_OFFSTPARK", "OFFSTPARK",
+  as.character(rhfs$OFFSTPARK) == "-9" & rhfs$NUMUNITS_R == 1 &
+    as.character(rhfs$OFFSTPARKAHS) == "2", 0, "-9")
+
+# All residential units in these seven rows are already accounted for without
+# any vacant-for-rent units. The independent rental total also equals rented.
+occupancy_components <- c("TRENOC_R", "TOWNOC_R", "TEMPOC_R", "TOTHVA_R")
+occupancy_complete <- rowSums(sapply(rhfs[occupancy_components],
+                                   function(x) !is.na(x) & x >= 0)) == 4L
+occupancy_sum <- rowSums(rhfs[occupancy_components])
+vacant_zero_guard <- occupancy_complete & rhfs$NUMUNITS_R >= 0 &
+  rhfs$NUMUNITS_R == occupancy_sum & rhfs$TOTRENTVAC >= 0 &
+  rhfs$TOTRENTVAC == rhfs$TRENOC_R
+vacant_observed <- which(vacant_zero_guard & rhfs$TRENVA_R >= 0)
+if (length(vacant_observed) &&
+    mean(rhfs$TRENVA_R[vacant_observed] == 0) < 0.99) {
+  bad <- vacant_observed[rhfs$TRENVA_R[vacant_observed] != 0]
+  stop("N02_TRENVA_R: observed-case accuracy under 99%; CONTROLPUF: ",
+       paste(head(rhfs$CONTROLPUF[bad], 20), collapse = ", "))
+}
+apply_clean_rule("N02_TRENVA_R", "TRENVA_R",
+  as.character(rhfs$TRENVA_R) == "-9" & vacant_zero_guard, 0, "-9")
+
+# Q17 calls each CP* cell marked -8 'Not Applicable' and defines the reported
+# total as a sum. Validate that identity on complete observed totals first.
+capital_components <- c(
+  "CPHEATAMT", "CPRFAMT", "CPWINAMT", "CPDOORAMT", "CPFLRAMT",
+  "CPEXTAMT", "CPPLBAMT", "CPELEAMT", "CPKITAMT", "CPBATAMT",
+  "CPACCAMT", "CPOTHAMT"
+)
+capital_matrix <- as.matrix(rhfs[capital_components])
+capital_complete <- rowSums(!is.na(capital_matrix) &
+  (capital_matrix == -8 | capital_matrix >= 0)) == length(capital_components)
+capital_observed <- which(capital_complete & rhfs$CAPEX_R >= 0)
+capital_sum <- rowSums(pmax(capital_matrix, 0))
+if (length(capital_observed) &&
+    mean(abs(rhfs$CAPEX_R[capital_observed] -
+             capital_sum[capital_observed]) <= 0.5) < 0.99) {
+  bad <- capital_observed[abs(rhfs$CAPEX_R[capital_observed] -
+                                capital_sum[capital_observed]) > 0.5]
+  stop("N03_CAPEX_R: observed-case sum accuracy under 99%; CONTROLPUF: ",
+       paste(head(rhfs$CONTROLPUF[bad], 20), collapse = ", "))
+}
+
+# A respondent able to report 2023 finances who explicitly supplied at least
+# one zero component, and no positive or unreported component, has a zero sum.
+# All--8 rows are excluded: their entire capital question may have been skipped.
+capital_zero_guard <- as.character(rhfs$PROPANS) == "1" &
+  rhfs$NUMUNITS_R > 0 & rhfs$CAPEX_R == -9 &
+  rhfs$CAPEXPU_R == -9 & capital_complete &
+  rowSums(capital_matrix == 0) >= 1L & capital_sum == 0
+apply_clean_rule("N03_CAPEX_R", "CAPEX_R", capital_zero_guard, 0, "-9")
+# Only the guarded -9 cells may change. Rebuild this column from the snapshot
+# so every published, observed CAPEX_R total stays exactly as it was.
+rhfs$CAPEX_R <- replace(rhfs_before$CAPEX_R,
+                       which(capital_zero_guard %in% TRUE), 0)
+apply_clean_rule("N04_CAPEXPU_R", "CAPEXPU_R", capital_zero_guard, 0, "-9")
+
+# Once a positive or explicitly reconstructed zero total establishes that the
+# capital question was answered, an item marked Not Applicable costs zero.
+for (variable in capital_components) {
+  apply_clean_rule(paste0("N05_", variable), variable,
+    rhfs[[variable]] == -8 & rhfs$CAPEX_R >= 0, 0, "-8")
+}
+
+# The existing cleaning made COMMRENT and OPEX_R explicitly zero on one row
+# whose published cap rate is still -9. Validate the four-input formula using
+# observed rates, including legitimate negative rates. Ratios have 4 decimals.
+caprate_inputs <- rhfs$TOTCOLL >= 0 & rhfs$COMMRENT >= 0 &
+  rhfs$OPEX_R >= 0 & rhfs$MRKTVAL_R > 0
+caprate_value <- (rhfs$TOTCOLL + rhfs$COMMRENT - rhfs$OPEX_R) /
+  rhfs$MRKTVAL_R
+caprate_observed <- which(caprate_inputs &
+  !as.character(rhfs$CAPRATE_R) %in% c("-8", "-9"))
+caprate_error <- abs(rhfs$CAPRATE_R[caprate_observed] -
+                       caprate_value[caprate_observed])
+if (length(caprate_observed) && mean(caprate_error <= 0.000051) < 0.99) {
+  bad <- caprate_observed[caprate_error > 0.000051]
+  stop("N06_CAPRATE_R: observed-case accuracy under 99%; CONTROLPUF: ",
+       paste(head(rhfs$CONTROLPUF[bad], 20), collapse = ", "))
+}
+caprate_rows <- which(caprate_inputs &
+  as.character(rhfs$CAPRATE_R) %in% c("-8", "-9"))
+apply_clean_rule("N06_CAPRATE_R", "CAPRATE_R",
+  seq_len(nrow(rhfs)) %in% caprate_rows,
+  round(caprate_value[caprate_rows], 4))
 
 
 write.csv(rhfs, "RHFS-2024-Cleaned.csv", row.names = FALSE)
