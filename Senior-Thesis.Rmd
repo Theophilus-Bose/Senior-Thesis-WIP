@@ -811,6 +811,24 @@ for (variable in opex_items_new) {
 }
 
 
+# Directly imputing some CAPRATE_R values that were not imputable before some 
+# of the previous direct imputations were done.
+caprate_followup_inputs <- rhfs$TOTCOLL >= 0 & rhfs$COMMRENT >= 0 &
+  rhfs$OPEX_R >= 0 & rhfs$MRKTVAL_R > 0
+caprate_followup_value <- (rhfs$TOTCOLL + rhfs$COMMRENT -
+                             rhfs$OPEX_R) / rhfs$MRKTVAL_R
+
+# Restrict changes to -9 rates with all four reported formula inputs.
+caprate_followup_rows <- which(caprate_followup_inputs &
+  as.character(rhfs$CAPRATE_R) == "-9")
+apply_clean_rule(
+  "N10_CAPRATE_R_AFTER_OPEX", "CAPRATE_R",
+  seq_len(nrow(rhfs)) %in% caprate_followup_rows,
+  round(caprate_followup_value[caprate_followup_rows], 4), "-9"
+)
+
+
+
 write.csv(rhfs, "RHFS-2024-Cleaned.csv", row.names = FALSE)
 ```
 
