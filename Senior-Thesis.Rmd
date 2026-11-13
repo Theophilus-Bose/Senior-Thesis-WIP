@@ -128,22 +128,18 @@ rhfs.original <- rhfs.original |>
   )
 ```
 
-```{r Cleaning the Dataset}
+```{r Deterministic Cleaning}
 # Makes View(rhfs) much more productive.
 rhfs <- rhfs.original |> 
-  select(-starts_with("REPWGT"), -WEIGHT, 
-         -SURVYR, # is always 2024
+  select(-starts_with("REPWGT"), -WEIGHT,
          # J flag variables mark values that were manually reviewed; note that
          # they may become relevant if outliers are under scrutiny.
-         -starts_with("J"), 
-         # A continuous variable coded as a factor without documentation; may
-         # be useful for pure prediction
-         # -PCTFEEWAIV_R, 
+         -starts_with("J"),
          # Poorly documented variable with 99.5% of its values missing
          -WEEKLNGPCT
          )
 
-# NAs in the dataset
+# Diagnostic to check for NAs in the dataset
 missingvalues <- function(df) {
   NAs <- sum(sapply(df, \(x) sum(x == -8))) # Not applicable
   NRs <- sum(sapply(df, \(x) sum(x == -9))) # Not reported
@@ -155,15 +151,6 @@ missingvalues <- function(df) {
   )
 }
 missingvalues(rhfs)
-
-# Missing values by interview type
-rhfs |> 
-  summarize(
-    # pick(everything()) extracts a data frame of all non-grouping columns
-    missingvalues(pick(everything())), 
-    .by = OUTCOME
-  )
-
 
 
 # Handling known Trivially Missing values
@@ -839,6 +826,14 @@ rhfs <- rhfs |>
   left_join(
     rhfs.original |> select(-any_of(names(rhfs)), CONTROLPUF),
     join_by(CONTROLPUF)
+  ) |> 
+  select(
+    -SURVYR, # is always 2024
+    # A continuous variable coded as a factor without documentation; may be
+    # useful for pure prediction
+    -PCTFEEWAIV_R, 
+    # Poorly documented variable with 99.5% of its values missing
+    -WEEKLNGPCT
   )
 
 # Loads the data frame with srvyr
@@ -867,37 +862,11 @@ df |>
   )
 ```
 
-```{r temp}
-missing_by_var <- data.frame(
-  variable = names(rhfs),
-  percent_missing = sapply(
-    rhfs,
-    \(x) mean(x %in% c(-9))
-  )
-) |>
-  arrange(desc(percent_missing))
+```{r EDA}
 
-
-# Evidence for MAR (missing at random) in MRKTVAL_R
-df |> 
-  mutate(
-    mrktNA = MRKTVAL_R == -9
-  ) |> 
-  summarize(
-    survey_mean(mrktNA), 
-    .by = NUMCAT_R
-  )
-
-df |> 
-  filter(MRKTVAL_R != -9) |> 
-  summarize( 
-    mean_mrktval = survey_mean(MRKTVAL_R), 
-    median_mrktval = survey_median(MRKTVAL_R), 
-    .by = NUMCAT_R 
-  )
 ```
 
-```{r EDA}
+```{r Modeling}
 
 ```
 
