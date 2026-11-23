@@ -866,11 +866,15 @@ df |>
 
 ```
 
-```{r Modeling}
+```{r Models}
 
 ```
 
-```{r Citations}
+```{r Rejected Models}
+
+```
+
+```{r Citations, include = FALSE}
 # For citing R, RStudio, and the packages that were used in this analysis
 cite_packages(
   pkgs = "All",
