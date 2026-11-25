@@ -131,7 +131,7 @@ rhfs.original <- rhfs.original |>
 ```{r Deterministic Cleaning}
 # Makes View(rhfs) much more productive.
 rhfs <- rhfs.original |> 
-  select(-starts_with("REPWGT"), -WEIGHT,
+  select(-starts_with("REPWGT"),
          # J flag variables mark values that were manually reviewed; note that
          # they may become relevant if outliers are under scrutiny.
          -starts_with("J"),
@@ -819,6 +819,12 @@ apply_clean_rule(
 write.csv(rhfs, "RHFS-2024-Cleaned.csv", row.names = FALSE)
 ```
 
+```{r mice Multi-unit Imputations}
+rhfsImputed <- rhfs
+
+
+```
+
 ```{r Survey Data Setup}
 # Brings back all of the columns that were dropped for convenience at the
 # beginning of Cleaning the Dataset
@@ -862,15 +868,19 @@ df |>
   )
 ```
 
-```{r EDA}
+```{r 5 Best Multi-unit Models}
 
 ```
 
-```{r Models}
+```{r Rejected Multi-unit Models}
 
 ```
 
-```{r Rejected Models}
+```{r 5 Best Multi-unit Models—Imputed}
+
+```
+
+```{r Rejected Multi-unit Models—Imputed}
 
 ```
 
